@@ -23,8 +23,11 @@ def main ():
 
 def recreate_endpoint (filter_, host_endpoint=None):
     endpoints = globus_endpoint_search(filter_)
-    assert 'DATA' in endpoints and endpoints['DATA'], 'No data found'
-    assert len(endpoints['DATA']) <= 1, 'Search returned multiple endpoints'
+    if not ('DATA' in endpoints and endpoints['DATA']):
+        raise Exception('No data found')
+    if len(endpoints['DATA']) > 1:
+        endpoints_str = ', '.join(endpoint['display_name'] for endpoint in endpoints['DATA'])
+        raise Exception('Search returned multiple endpoints: {0}'.format(endpoints_str))
     endpoint = endpoints['DATA'][0]
 
     temp_display_name = '{0}-new-{1}'.format(endpoint['display_name'],
