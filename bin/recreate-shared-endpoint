@@ -21,14 +21,8 @@ def main ():
         recreate_endpoint(filter_, host_endpoint=args.host_endpoint)
 
 
-def recreate_endpoint (filter_, host_endpoint=None):
-    endpoints = globus_endpoint_search(filter_)
-    if not ('DATA' in endpoints and endpoints['DATA']):
-        raise Exception('No data found')
-    if len(endpoints['DATA']) > 1:
-        endpoints_str = ', '.join(endpoint['display_name'] for endpoint in endpoints['DATA'])
-        raise Exception('Search returned multiple endpoints: {0}'.format(endpoints_str))
-    endpoint = endpoints['DATA'][0]
+def recreate_endpoint (id_or_filter, host_endpoint=None):
+    endpoint = get_endpoint(id_or_filter)
 
     temp_display_name = '{0}-new-{1}'.format(endpoint['display_name'],
                                              datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
@@ -70,6 +64,24 @@ def recreate_endpoint (filter_, host_endpoint=None):
                                                datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
     globus_endpoint_update(endpoint['name'], display_name=legacy_display_name)
     globus_endpoint_update(created_endpoint['id'], display_name=endpoint['display_name'])
+
+
+def get_endpoint (id_or_filter):
+    try:
+        return globus_endpoint_show(id_or_filter, capture_stderr=True)
+    except subprocess.CalledProcessError:
+        endpoints = globus_endpoint_search(id_or_filter)
+        if not ('DATA' in endpoints and endpoints['DATA']):
+            raise Exception('No data found')
+        if len(endpoints['DATA']) > 1:
+            endpoints_str = ' '.join('{0}({1})'.format(endpoint['id'], endpoint['display_name']) for endpoint in endpoints['DATA'])
+            raise Exception('Search returned multiple endpoints: {0}'.format(endpoints_str))
+        return endpoints['DATA'][0]
+
+
+def globus_endpoint_show (id_, **kwargs):
+    args = ['globus', 'endpoint', 'show', id_]
+    return run_json_command(args, **kwargs)
 
 
 def globus_endpoint_search (filter_fulltext):
@@ -166,12 +178,13 @@ def globus_endpoint_permission_create (endpoint_id_and_path,
     return run_json_command(args)
 
 
-def run_json_command (args):
+def run_json_command (args, capture_stderr=False):
     args.extend(('--format', 'json'))
-    p = subprocess.Popen(args, stdout=subprocess.PIPE)
-    stdout, _ = p.communicate()
+    stderr = subprocess.PIPE if capture_stderr else None
+    p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=stderr)
+    stdout, stderr = p.communicate()
     if p.returncode:
-        raise subprocess.CalledProcessError(self.returncode, args, stdout)
+        raise subprocess.CalledProcessError(p.returncode, args, stdout, stderr)
     if stdout:
         return json.loads(stdout)
 
