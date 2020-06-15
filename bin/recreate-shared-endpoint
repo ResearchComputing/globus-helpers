@@ -1,0 +1,203 @@
+#!/usr/bin/env python
+
+
+from __future__ import print_function
+
+import argparse
+import datetime
+import json
+import subprocess
+import urllib.parse
+
+
+def main ():
+    parser = argparse.ArgumentParser(description='Recreate Globus shared endpoints')
+    parser.add_argument(
+        '--host-endpoint', help='Use an alternate host endpoint')
+    parser.add_argument(
+        'filters', nargs='+', help='Search filters for the endpoints to recreate')
+    args = parser.parse_args()
+    for filter_ in args.filters:
+        recreate_endpoint(filter_, host_endpoint=args.host_endpoint)
+
+
+def globus_endpoint_search (filter_fulltext):
+    search_args = ['globus', 'endpoint', 'search', filter_fulltext]
+    search_args.extend(('--format', 'json'))
+    p = subprocess.Popen(search_args, stdout=subprocess.PIPE)
+    stdout, _ = p.communicate()
+    p.check_returncode()
+    if stdout:
+        return json.loads(stdout)
+
+
+def globus_endpoint_permission_list (endpoint_id):
+    permission_args = ['globus', 'endpoint', 'permission', 'list', endpoint_id]
+    permission_args.extend(('--format', 'json'))
+    p = subprocess.Popen(permission_args, stdout=subprocess.PIPE)
+    stdout, _ = p.communicate()
+    p.check_returncode()
+    if stdout:
+        return json.loads(stdout)
+
+
+def globus_endpoint_role_list (endpoint_id):
+    role_args = ['globus', 'endpoint', 'role', 'list', endpoint_id]
+    role_args.extend(('--format', 'json'))
+    p = subprocess.Popen(role_args, stdout=subprocess.PIPE)
+    stdout, _ = p.communicate()
+    p.check_returncode()
+    if stdout:
+        return json.loads(stdout)
+
+
+def globus_endpoint_update (endpoint_id, display_name=None):
+    update_args = ['globus', 'endpoint', 'update', endpoint_id]
+    update_args.extend(('--format', 'json'))
+    if display_name is not None:
+        update_args.extend(('--display-name', display_name))
+    p = subprocess.Popen(update_args, stdout=subprocess.PIPE)
+    stdout, _ = p.communicate()
+    p.check_returncode()
+    if stdout:
+        return json.loads(stdout)
+
+
+def globus_endpoint_create (display_name, shared=None, disable_verify=None,
+                            force_encryption=None, default_directory=None, keywords=None,
+                            department=None, organization=None, contact_email=None,
+                            contact_info=None, info_link=None, description=None):
+    create_args = ['globus', 'endpoint', 'create', display_name]
+    create_args.extend(('--format', 'json'))
+
+    if shared is not None:
+        create_args.extend(('--shared', shared))
+
+    if disable_verify is not None:
+        if disable_verify:
+            create_args.append('--disable-verify')
+        else:
+            create_args.append('--no-disable-verify')
+
+    if force_encryption is not None:
+        if force_encryption:
+            create_args.append('--force-encryption')
+        else:
+            create_args.append('--no-force-encryption')
+
+    if default_directory is not None:
+        create_args.extend(('--default-directory', default_directory))
+
+    if keywords is not None:
+        create_args.extend(('--keywords', keywords))
+
+    if department is not None:
+        create_args.extend(('--department', department))
+
+    if organization is not None:
+        create_args.extend(('--organization', organization))
+
+    if contact_email is not None:
+        create_args.extend(('--contact-email', contact_email))
+
+    if contact_info is not None:
+        create_args.extend(('--contact-info', contact_info))
+
+    if info_link is not None:
+        create_args.extend(('--info-link', info_link))
+
+    if description is not None:
+        create_args.extend(('--description', description))
+
+    p = subprocess.Popen(create_args, stdout=subprocess.PIPE)
+    stdout, _ = p.communicate()
+    p.check_returncode()
+    if stdout:
+        return json.loads(stdout)
+
+
+def globus_endpoint_role_create (endpoint_id, provision_identity=None,
+                                 role=None, map_http_status=None):
+    args = ['globus', 'endpoint', 'role', 'create', endpoint_id]
+    if provision_identity is not None:
+        args.extend(('--provision-identity', provision_identity))
+    if role is not None:
+        args.extend(('--role', role))
+    if map_http_status is not None:
+        args.extend(('--map-http-status', map_http_status))
+    args.extend(('--format', 'json'))
+    p = subprocess.Popen(args, stdout=subprocess.PIPE)
+    stdout, _ = p.communicate()
+    p.check_returncode()
+    if stdout:
+        return json.loads(stdout)
+
+
+def globus_endpoint_permission_create (endpoint_id_and_path,
+                                       identity=None, permissions=None, map_http_status=None):
+    args = ['globus', 'endpoint', 'permission', 'create', endpoint_id_and_path]
+    if identity is not None:
+        args.extend(('--identity', identity))
+    if permissions is not None:
+        args.extend(('--permissions', permissions))
+    if map_http_status is not None:
+        args.extend(('--map-http-status', map_http_status))
+    args.extend(('--format', 'json'))
+    p = subprocess.Popen(args, stdout=subprocess.PIPE)
+    stdout, _ = p.communicate()
+    p.check_returncode()
+    if stdout:
+        return json.loads(stdout)
+
+
+def recreate_endpoint (filter_, host_endpoint=None):
+    endpoints = globus_endpoint_search(filter_)
+    assert 'DATA' in endpoints and endpoints['DATA'], 'No data found'
+    assert len(endpoints['DATA']) <= 1, 'Search returned multiple endpoints'
+    endpoint = endpoints['DATA'][0]
+
+    temp_display_name = '{0}-new-{1}'.format(endpoint['display_name'],
+                                             datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
+    sharing_target_root_path = urllib.parse.unquote(endpoint['sharing_target_root_path'])
+    if host_endpoint is None:
+        host_endpoint = endpoint['host_endpoint_id']
+    shared_endpoint_target = '{0}:{1}'.format(host_endpoint, sharing_target_root_path)
+    created_endpoint = globus_endpoint_create(temp_display_name,
+                                              shared=shared_endpoint_target,
+                                              disable_verify=endpoint['disable_verify'],
+                                              force_encryption=endpoint['force_encryption'],
+                                              default_directory=endpoint['default_directory'],
+                                              keywords=endpoint['keywords'],
+                                              department=endpoint['department'],
+                                              organization=endpoint['organization'],
+                                              contact_email=endpoint['contact_email'],
+                                              contact_info=endpoint['contact_info'],
+                                              info_link=endpoint['info_link'],
+                                              description=endpoint['description'])
+
+    roles = globus_endpoint_role_list(endpoint['name'])
+    if roles:
+        for role in roles['DATA']:
+            globus_endpoint_role_create(created_endpoint['id'],
+                                        provision_identity=role['principal'],
+                                        role=role['role'],
+                                        map_http_status='409=0')
+
+    permissions = globus_endpoint_permission_list(endpoint['name'])
+    if permissions:
+        for permission in permissions['DATA']:
+            endpoint_id_and_path = '{0}:{1}'.format(created_endpoint['id'], permission['path'])
+            globus_endpoint_permission_create(endpoint_id_and_path,
+                                              identity=permission['principal'],
+                                              permissions=permission['permissions'],
+                                              map_http_status='409=0')
+
+    legacy_display_name = '{0}-old-{1}'.format(endpoint['display_name'],
+                                               datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
+    globus_endpoint_update(endpoint['name'], display_name=legacy_display_name)
+    globus_endpoint_update(created_endpoint['id'], display_name=endpoint['display_name'])
+
+
+
+if __name__ == '__main__':
+    main()
